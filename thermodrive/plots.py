@@ -38,12 +38,18 @@ def _base_layout(fig: go.Figure, title: str, ytitle: str | None = None) -> go.Fi
 def climate_temperature_plot(weather: pd.DataFrame, baseline: SimulationResult | None = None, design: SimulationResult | None = None) -> go.Figure:
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=weather.index, y=weather["air_temp_C"], name="Air", line=dict(color="#78909C", width=1)))
+    if "observed_surface_C" in weather:
+        obs = weather["observed_surface_C"].replace([-9999, -9999.0], np.nan)
+        fig.add_trace(go.Scatter(x=weather.index, y=obs, name="NOAA observed surface", line=dict(color="#263238", width=1.2, dash="dot"), visible="legendonly"))
     if baseline is not None:
         fig.add_trace(go.Scatter(x=baseline.time_series.index, y=baseline.surface_C, name="Baseline driveway", line=dict(color=BRAND_ORANGE, width=1.6)))
     if design is not None:
         fig.add_trace(go.Scatter(x=design.time_series.index, y=design.surface_C, name="With thermosyphons", line=dict(color=BRAND_BLUE, width=1.8)))
+    fig.add_hrect(y0=-40, y1=0, fillcolor="rgba(198,40,40,0.06)", line_width=0)
     fig.add_hline(y=0, line=dict(color=BRAND_RED, dash="dash"), annotation_text="Freezing", annotation_position="bottom right")
-    return _base_layout(fig, "Hourly temperature profile", "Temperature (°C)")
+    fig = _base_layout(fig, "Hourly temperature profile", "Temperature (°C)")
+    fig.update_xaxes(rangeslider=dict(visible=True, thickness=0.05))
+    return fig
 
 
 def freeze_calendar_plot(baseline: SimulationResult, design: SimulationResult | None = None) -> go.Figure:
@@ -176,3 +182,80 @@ def pipe_layout_plot(area_m2: float, design: ThermosyphonDesign | None) -> go.Fi
     fig.update_yaxes(scaleanchor="x", scaleratio=1)
     fig.update_layout(height=420)
     return _base_layout(fig, "Conceptual pipe layout", "Width (ft)").update_xaxes(title="Length (ft)")
+
+
+def monthly_performance_plot(baseline: SimulationResult, design: SimulationResult | None = None) -> go.Figure:
+    """Monthly freeze-risk and heat-delivery summary."""
+    df = pd.DataFrame(index=baseline.time_series.index)
+    df["Baseline freeze hours"] = (baseline.surface_C < 0.0).astype(int)
+    if design is not None:
+        df["Design freeze hours"] = (design.surface_C < 0.0).astype(int)
+        df["Thermosyphon kWh/m2"] = design.hp_flux_W_m2 * 3600.0 / 3.6e6
+    monthly = df.resample("MS").sum()
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=monthly.index, y=monthly["Baseline freeze hours"], name="Baseline freeze hours", marker_color=BRAND_ORANGE))
+    if design is not None:
+        fig.add_trace(go.Bar(x=monthly.index, y=monthly["Design freeze hours"], name="Design freeze hours", marker_color=BRAND_BLUE))
+        fig.add_trace(go.Scatter(x=monthly.index, y=monthly["Thermosyphon kWh/m2"], name="Heat delivered (kWh/m2)", yaxis="y2", line=dict(color=BRAND_GREEN, width=2.4)))
+        fig.update_layout(yaxis2=dict(title="kWh/m2", overlaying="y", side="right", showgrid=False))
+    return _base_layout(fig, "Monthly risk reduction and delivered heat", "Freeze hours")
+
+
+def source_comparison_plot(nasa_weather: pd.DataFrame | None, noaa_weather: pd.DataFrame | None) -> go.Figure:
+    """Compare NASA gridded weather with nearest NOAA station observations."""
+    fig = go.Figure()
+    if nasa_weather is not None and not nasa_weather.empty:
+        daily = nasa_weather[["air_temp_C", "ghi_W_m2"]].resample("D").mean()
+        fig.add_trace(go.Scatter(x=daily.index, y=daily["air_temp_C"], name="NASA air temp", line=dict(color=BRAND_BLUE, width=1.8)))
+    if noaa_weather is not None and not noaa_weather.empty:
+        daily2 = noaa_weather[["air_temp_C", "ghi_W_m2"]].resample("D").mean()
+        fig.add_trace(go.Scatter(x=daily2.index, y=daily2["air_temp_C"], name="NOAA air temp", line=dict(color=BRAND_ORANGE, width=1.8)))
+    fig.add_hline(y=0, line=dict(color=BRAND_RED, dash="dash"))
+    return _base_layout(fig, "NASA POWER vs NOAA USCRN daily air temperature", "Daily mean air temp (C)")
+
+
+def validation_overlay_plot(validation_result: SimulationResult | None, noaa_weather: pd.DataFrame | None) -> go.Figure:
+    fig = go.Figure()
+    if validation_result is not None:
+        fig.add_trace(go.Scatter(x=validation_result.time_series.index, y=validation_result.surface_C, name="Modeled surface", line=dict(color=BRAND_BLUE, width=1.8)))
+    if noaa_weather is not None and not noaa_weather.empty and "observed_surface_C" in noaa_weather:
+        obs = noaa_weather["observed_surface_C"].replace([-9999, -9999.0], np.nan)
+        fig.add_trace(go.Scatter(x=noaa_weather.index, y=obs, name="NOAA IR surface", line=dict(color=BRAND_ORANGE, width=1.3)))
+    fig.add_hline(y=0, line=dict(color=BRAND_RED, dash="dash"))
+    return _base_layout(fig, "Validation: modeled vs NOAA observed surface temperature", "Surface temperature (C)")
+
+
+def soil_validation_plot(validation_result: SimulationResult | None, noaa_weather: pd.DataFrame | None) -> go.Figure:
+    fig = go.Figure()
+    if noaa_weather is None or noaa_weather.empty:
+        return _base_layout(fig, "Validation: soil temperatures", "Soil temperature (C)")
+    depths = [(5, 0.05), (20, 0.20), (50, 0.50), (100, 1.00)]
+    for cm, m in depths:
+        obs_col = f"observed_soil_{cm}cm_C"
+        if obs_col in noaa_weather:
+            obs = noaa_weather[obs_col].replace([-9999, -9999.0], np.nan).resample("D").mean()
+            fig.add_trace(go.Scatter(x=obs.index, y=obs, name=f"NOAA {cm} cm", line=dict(width=1.2, dash="dot")))
+        if validation_result is not None and validation_result.depth_m.max() >= m:
+            values = np.array([np.interp(m, validation_result.depth_m, row) for row in validation_result.temperature_C], dtype=float)
+            model = pd.Series(values, index=validation_result.time_series.index).resample("D").mean()
+            fig.add_trace(go.Scatter(x=model.index, y=model, name=f"Model {cm} cm", line=dict(width=1.8)))
+    return _base_layout(fig, "Validation: daily soil-temperature profiles", "Soil temperature (C)")
+
+
+def tuning_score_plot(trials: pd.DataFrame | None) -> go.Figure:
+    fig = go.Figure()
+    if trials is None or trials.empty:
+        return _base_layout(fig, "Tuning trials", "Composite RMSE score")
+    df = trials.reset_index(drop=True).copy()
+    df["trial"] = np.arange(1, len(df) + 1)
+    fig = px.scatter(
+        df,
+        x="trial",
+        y="composite_score",
+        size="soil_k_W_mK" if "soil_k_W_mK" in df else None,
+        color="custom_albedo" if "custom_albedo" in df else None,
+        hover_data=[c for c in ["surface_rmse_C", "soil_rmse_mean_C", "albedo_factor", "soil_k_factor", "ground_offset_C"] if c in df.columns],
+        title="NOAA calibration trial scores",
+    )
+    fig.update_traces(marker=dict(opacity=0.85, line=dict(width=0.5, color="white")))
+    return _base_layout(fig, "NOAA calibration trial scores", "Composite RMSE score")

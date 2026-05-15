@@ -12,7 +12,7 @@ from .cost import CostEstimate, InstallType, estimate_project_cost
 from .metrics import PerformanceMetrics, compare_metrics, compute_metrics
 from .physics import SimulationConfig, SimulationResult, run_thermal_simulation
 from .soil import SoilProfile
-from .thermosyphon import ThermosyphonDesign, pipe_conductance_W_K, pipe_count, max_heat_per_pipe_W
+from .thermosyphon import ThermosyphonDesign, activation_delta_C, max_heat_per_pipe_W, pipe_conductance_W_K, pipe_count
 from .units import FT_TO_M
 
 Goal = Literal["Reduce freeze risk", "Reduce thermal cracking", "Overheating analysis"]
@@ -34,9 +34,10 @@ class OptimizationResult:
 
 
 def _candidate_designs(max_depth_m: float, fluid: str, aggressive: bool = False) -> list[ThermosyphonDesign]:
-    depth_ft_options = [4, 6, 8, 10, 12, 15]
-    spacing_ft_options = [2.5, 3.0, 3.5, 4.0, 5.0, 6.0, 8.0]
-    diameter_mm_options = [19, 25, 32] if aggressive else [19, 25]
+    high_output = "High-output" in fluid
+    depth_ft_options = [4, 6, 8, 10, 12, 15, 16, 18, 20, 24] if high_output else [4, 6, 8, 10, 12, 15]
+    spacing_ft_options = [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0, 8.0] if high_output else [2.5, 3.0, 3.5, 4.0, 5.0, 6.0, 8.0]
+    diameter_mm_options = [25, 32, 38, 50] if high_output else ([19, 25, 32] if aggressive else [19, 25])
     designs: list[ThermosyphonDesign] = []
     for depth_ft in depth_ft_options:
         depth_m = depth_ft * FT_TO_M
@@ -50,7 +51,7 @@ def _candidate_designs(max_depth_m: float, fluid: str, aggressive: bool = False)
                         spacing_m=spacing_m,
                         depth_m=depth_m,
                         diameter_m=dia_mm / 1000.0,
-                        top_depth_m=0.10,
+                        top_depth_m=0.06 if high_output else 0.10,
                         fluid=fluid,
                     )
                 )
@@ -72,13 +73,25 @@ def _surrogate_reduction(
     surface = baseline.surface_C.to_numpy(dtype=float)
     bottom = _depth_series(baseline, design.depth_m)
     dT = bottom - surface
-    active = dT > 0.5
+    activation = activation_delta_C(design)
+    active = dT > activation
     g = pipe_conductance_W_K(design, baseline.soil.k_W_mK, top_k_W_mK=1.2)
-    q_pipe = np.minimum(np.maximum(g * (dT - 0.5), 0), max_heat_per_pipe_W(design))
+    rec = design.fluid_record
+    tmin = float(rec.get("temp_min_C", -80.0))
+    tmax = float(rec.get("temp_max_C", 120.0))
+    tmean = 0.5 * (surface + bottom)
+    low_margin = np.clip((tmean - tmin) / 6.0, 0.0, 1.0)
+    high_margin = np.clip((tmax - tmean) / 10.0, 0.0, 1.0)
+    cap = np.minimum(low_margin, high_margin)
+    cap[(surface < tmin) | (bottom < tmin) | (tmean > tmax)] = 0.0
+    q_pipe = np.minimum(np.maximum(g * (dT - activation), 0), max_heat_per_pipe_W(design) * cap)
     q_area = q_pipe / design.tributary_area_m2
     # Convert heat flux to a rough temperature lift. This is only for ranking;
     # full FD verification is run for selected candidates.
-    temp_lift = np.clip(q_area / 13.5, 0, 8.0)
+    # Surrogate only ranks candidates. Keep it conservative so the candidate
+    # table does not over-promise relative to the verified finite-difference run.
+    lift_denominator = 85.0 if "High-output" in design.fluid else 65.0
+    temp_lift = np.clip(q_area / lift_denominator, 0, 4.5 if "High-output" in design.fluid else 3.5)
     cold_weight = np.clip((4.0 - surface) / 8.0, 0.0, 1.0)
     surface_hat = surface + temp_lift * cold_weight
     wet = baseline.weather.get("wet_flag", pd.Series(False, index=baseline.weather.index)).to_numpy(dtype=bool)
@@ -250,14 +263,17 @@ def optimize_design(
             recommendation_note=note,
         )
 
-    # Verify a diverse set: best ranked, best performance, and least cost above half target.
+    # Verify a diverse set while keeping Streamlit response time reasonable.
+    # Put the top-performance designs first so cold states such as Idaho do not
+    # get stuck verifying only low-cost, low-output candidates.
+    verify_budget = min(len(candidates), max(full_verify_count, 4))
     idxs: list[int] = []
-    idxs.extend(candidates.head(full_verify_count).index.tolist())
-    idxs.extend(candidates.sort_values("estimated_reduction_pct", ascending=False).head(3).index.tolist())
+    idxs.extend(candidates.sort_values("estimated_reduction_pct", ascending=False).head(2).index.tolist())
+    idxs.extend(candidates.head(max(verify_budget - 2, 1)).index.tolist())
     half = candidates[candidates["estimated_reduction_pct"] >= 0.5 * target_reduction_pct]
     if not half.empty:
-        idxs.extend(half.sort_values("base_cost").head(3).index.tolist())
-    idxs = list(dict.fromkeys(idxs))[: max(full_verify_count, 3)]
+        idxs.extend(half.sort_values("base_cost").head(2).index.tolist())
+    idxs = list(dict.fromkeys(idxs))[:verify_budget]
 
     verified_rows: list[dict[str, float | int | str | bool]] = []
     best: tuple[float, ThermosyphonDesign, SimulationResult, PerformanceMetrics, dict[str, float], CostEstimate] | None = None
@@ -275,6 +291,12 @@ def optimize_design(
             dt_s=config.dt_s,
             custom_albedo=config.custom_albedo,
             custom_emissivity=config.custom_emissivity,
+            convection_multiplier=config.convection_multiplier,
+            sky_temperature_offset_C=config.sky_temperature_offset_C,
+            ground_mean_offset_C=config.ground_mean_offset_C,
+            precipitation_energy_enabled=config.precipitation_energy_enabled,
+            evaporative_cooling_factor=config.evaporative_cooling_factor,
+            snow_melt_factor=config.snow_melt_factor,
         )
         result = run_thermal_simulation(weather, site, soil, design_config, thermosyphon=design)
         metrics = compute_metrics(result)
