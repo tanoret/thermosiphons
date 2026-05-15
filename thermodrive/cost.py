@@ -33,16 +33,10 @@ def _pipe_unit_cost_per_ft(diameter_m: float) -> float:
         return 3.85
     if d_mm <= 26:
         return 6.50
-    if d_mm <= 35:
-        return 9.75
-    if d_mm <= 42:
-        return 14.50
-    return 22.00
+    return 9.75
 
 
 def _factory_charge_cost(fluid: str) -> float:
-    if "High-output" in fluid:
-        return 135.0
     if "CO2" in fluid or "refrigerant" in fluid:
         return 82.0
     if "Water" in fluid:
@@ -86,11 +80,7 @@ def estimate_project_cost(
     _line(lines, "End caps, charge port, QA fittings", n_pipes, "pipe", 16.0 if design.diameter_mm <= 26 else 23.0, "Factory-sealed assembly")
     _line(lines, "Working fluid charge + pressure test", n_pipes, "pipe", _factory_charge_cost(design.fluid), design.fluid)
     _line(lines, "External corrosion/wear coating", total_pipe_ft, "ft", 1.35, "Below-grade protection")
-    high_output = "High-output" in design.fluid
-    _line(lines, "Conductive grout / thermal backfill", total_pipe_ft, "ft", 3.10 if high_output else 1.65, "Improves contact resistance")
-    if high_output:
-        _line(lines, "Near-surface heat-spreader strip/manifold", area_sqft, "ft²", 2.35, "High-output package: spreads pipe heat into the slab")
-        _line(lines, "Enhanced factory QA / pressure rating", n_pipes, "pipe", 42.0, "Higher capacity refrigerant-grade assembly")
+    _line(lines, "Conductive grout / thermal backfill", total_pipe_ft, "ft", 1.65, "Improves contact resistance")
 
     if existing:
         _line(lines, "Coring/drilling/excavation labor", total_pipe_ft, "vertical ft", 9.75 * region_factor, "Retrofit production rate")

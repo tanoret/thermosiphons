@@ -19,9 +19,6 @@ FLUID_LIBRARY: dict[str, dict[str, float | str]] = {
         "startup_C": 0.6,
         "temp_min_C": -40.0,
         "temp_max_C": 85.0,
-        "contact_R_K_W": 0.075,
-        "spreader_multiplier": 1.0,
-        "evaporator_multiplier": 1.0,
         "label": "Subzero-capable economy fluid, factory sealed",
     },
     "CO2 / refrigerant grade (factory sealed)": {
@@ -30,21 +27,7 @@ FLUID_LIBRARY: dict[str, dict[str, float | str]] = {
         "startup_C": 0.4,
         "temp_min_C": -50.0,
         "temp_max_C": 45.0,
-        "contact_R_K_W": 0.060,
-        "spreader_multiplier": 1.0,
-        "evaporator_multiplier": 1.0,
         "label": "Higher capacity, pressure-rated factory assembly",
-    },
-    "High-output CO2 + thermal grout + heat spreader": {
-        "qmax_25mm_W": 165.0,
-        "internal_R_K_W": 0.022,
-        "startup_C": 0.22,
-        "temp_min_C": -55.0,
-        "temp_max_C": 48.0,
-        "contact_R_K_W": 0.030,
-        "spreader_multiplier": 1.65,
-        "evaporator_multiplier": 1.35,
-        "label": "Pressure-rated high-output concept with conductive grout and near-surface heat spreader",
     },
     "Water (above-freezing applications only)": {
         "qmax_25mm_W": 80.0,
@@ -52,9 +35,6 @@ FLUID_LIBRARY: dict[str, dict[str, float | str]] = {
         "startup_C": 0.4,
         "temp_min_C": 0.1,
         "temp_max_C": 95.0,
-        "contact_R_K_W": 0.060,
-        "spreader_multiplier": 1.0,
-        "evaporator_multiplier": 1.0,
         "label": "Low-cost but not recommended for freeze-risk designs",
     },
 }
@@ -89,25 +69,20 @@ def pipe_count(area_m2: float, spacing_m: float) -> int:
 
 def pipe_conductance_W_K(design: ThermosyphonDesign, soil_k_W_mK: float, top_k_W_mK: float = 1.2) -> float:
     """Return effective pipe-plus-contact conductance for one pipe."""
-    rec = design.fluid_record
     radius = max(design.diameter_m / 2.0, 0.004)
     influence_radius = max(design.spacing_m / np.sqrt(np.pi), radius * 8.0)
-    spreader_multiplier = float(rec.get("spreader_multiplier", 1.0))
-    evaporator_multiplier = float(rec.get("evaporator_multiplier", 1.0))
-    condenser_len = max(0.25, min(0.90, design.depth_m * 0.18 * spreader_multiplier))
-    evaporator_len = max(0.50, min(2.40, design.depth_m * 0.35 * evaporator_multiplier))
-    top_k = max(top_k_W_mK * spreader_multiplier, 0.45)
+    condenser_len = max(0.25, min(0.60, design.depth_m * 0.18))
+    evaporator_len = max(0.50, min(1.50, design.depth_m * 0.35))
+    top_k = max(top_k_W_mK, 0.45)
     soil_k = max(soil_k_W_mK, 0.35)
 
     r_top = max(log(influence_radius / radius), 0.1) / (2.0 * pi * top_k * condenser_len)
     r_bottom = max(log(influence_radius / radius), 0.1) / (2.0 * pi * soil_k * evaporator_len)
-    r_internal = float(rec["internal_R_K_W"])
-    # Contact/backfill resistance is explicitly lower for high-output designs
-    # that include thermal grout and a near-surface spreader strip.
-    default_contact = 0.055 + 0.020 * (0.025 / max(design.diameter_m, 0.012))
-    r_contact = float(rec.get("contact_R_K_W", default_contact))
-    conductance = 1.0 / (r_top + r_bottom + r_internal + r_contact) * 25.0
-    return float(np.clip(conductance, 0.5, 1800.0))
+    r_internal = float(design.fluid_record["internal_R_K_W"])
+    # Two conservative contact terms for imperfect embedment/backfill.
+    r_contact = 0.055 + 0.020 * (0.025 / max(design.diameter_m, 0.012))
+    conductance = 1.0 / (r_top + r_bottom + r_internal + r_contact)
+    return float(np.clip(conductance, 0.5, 90.0)) * 100.0
 
 
 def max_heat_per_pipe_W(design: ThermosyphonDesign) -> float:
@@ -115,26 +90,7 @@ def max_heat_per_pipe_W(design: ThermosyphonDesign) -> float:
     base = float(rec["qmax_25mm_W"])
     diameter_factor = (design.diameter_m / 0.025) ** 1.75
     length_factor = sqrt(max(design.depth_m, 0.5) / 2.4)
-    return float(np.clip(base * diameter_factor * length_factor, 10.0, 950.0))
-
-
-
-
-def temperature_capacity_factor(design: ThermosyphonDesign, top_temp_C: float, bottom_temp_C: float) -> float:
-    """Capacity derate for working-fluid operating envelope.
-
-    Water-filled units are intentionally derated to zero below freezing; CO2 and
-    methanol blends retain capacity in subzero winter screening applications.
-    """
-    rec = design.fluid_record
-    tmin = float(rec.get("temp_min_C", -80.0))
-    tmax = float(rec.get("temp_max_C", 120.0))
-    tmean = 0.5 * (top_temp_C + bottom_temp_C)
-    if top_temp_C < tmin or bottom_temp_C < tmin or tmean > tmax:
-        return 0.0
-    low_margin = np.clip((tmean - tmin) / 6.0, 0.0, 1.0)
-    high_margin = np.clip((tmax - tmean) / 10.0, 0.0, 1.0)
-    return float(min(low_margin, high_margin))
+    return float(np.clip(base * diameter_factor * length_factor, 10.0, 450.0))
 
 
 def activation_delta_C(design: ThermosyphonDesign) -> float:
@@ -163,20 +119,13 @@ def thermosyphon_flux_per_area(
     if delta <= 0.0:
         return 0.0
     g = pipe_conductance_W_K(design, soil_k_W_mK=soil_k_W_mK, top_k_W_mK=top_k_W_mK)
-    capacity_factor = temperature_capacity_factor(design, top_temp_C=top_temp_C, bottom_temp_C=bottom_temp_C)
-    if capacity_factor <= 0.0:
-        return 0.0
-    q_pipe = min(g * delta, max_heat_per_pipe_W(design) * capacity_factor)
+    q_pipe = min(g * delta, max_heat_per_pipe_W(design))
     q_area = q_pipe / design.tributary_area_m2
 
     # Prevent explicit source term from numerically over-equalizing the two cells.
     physical_delta = max(bottom_temp_C - top_temp_C, 0.0)
     if physical_delta > 0:
-        # A high-output design includes a heat spreader and better grout, so it can
-        # safely use a larger fraction of the available cell-to-cell thermal
-        # disequilibrium without producing unstable explicit equalization.
-        equalize_fraction = 0.88 if "High-output" in design.fluid else 0.70
-        q_equalize = equalize_fraction * physical_delta / max(dt_s, 1.0) / (
+        q_equalize = 0.70 * physical_delta / max(dt_s, 1.0) / (
             1.0 / max(cap_top_J_m2K, 1.0) + 1.0 / max(cap_bottom_J_m2K, 1.0)
         )
         q_area = min(q_area, q_equalize)
