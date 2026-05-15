@@ -82,7 +82,7 @@ def pipe_conductance_W_K(design: ThermosyphonDesign, soil_k_W_mK: float, top_k_W
     # Two conservative contact terms for imperfect embedment/backfill.
     r_contact = 0.055 + 0.020 * (0.025 / max(design.diameter_m, 0.012))
     conductance = 1.0 / (r_top + r_bottom + r_internal + r_contact)
-    return float(np.clip(conductance, 0.5, 90.0)) * 100.0
+    return float(np.clip(conductance, 0.5, 90.0))
 
 
 def max_heat_per_pipe_W(design: ThermosyphonDesign) -> float:
