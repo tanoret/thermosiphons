@@ -14,7 +14,7 @@ import numpy as np
 
 FLUID_LIBRARY: dict[str, dict[str, float | str]] = {
     "Methanol blend (factory sealed)": {
-        "qmax_25mm_W": 650.0,
+        "qmax_25mm_W": 6500.0,
         "internal_R_K_W": 0.055,
         "startup_C": 0.6,
         "temp_min_C": -40.0,
@@ -22,7 +22,7 @@ FLUID_LIBRARY: dict[str, dict[str, float | str]] = {
         "label": "Subzero-capable economy fluid, factory sealed",
     },
     "CO2 / refrigerant grade (factory sealed)": {
-        "qmax_25mm_W": 950.0,
+        "qmax_25mm_W": 9500.0,
         "internal_R_K_W": 0.040,
         "startup_C": 0.4,
         "temp_min_C": -50.0,
@@ -30,7 +30,7 @@ FLUID_LIBRARY: dict[str, dict[str, float | str]] = {
         "label": "Higher capacity, pressure-rated factory assembly",
     },
     "Water (above-freezing applications only)": {
-        "qmax_25mm_W": 800.0,
+        "qmax_25mm_W": 8000.0,
         "internal_R_K_W": 0.035,
         "startup_C": 0.4,
         "temp_min_C": 0.1,
