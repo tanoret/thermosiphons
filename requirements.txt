@@ -1,8 +1,0 @@
-streamlit>=1.36
-numpy>=1.26
-pandas>=2.2
-plotly>=5.22
-requests>=2.32
-pgeocode>=0.5
-python-dateutil>=2.9
-pytest>=8.2

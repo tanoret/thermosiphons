@@ -1,9 +1,0 @@
-[project]
-name = "thermodrive-app"
-version = "0.1.0"
-description = "Streamlit sales dashboard and finite-difference model for passive driveway thermosyphon screening."
-requires-python = ">=3.10"
-
-[tool.pytest.ini_options]
-pythonpath = ["."]
-testpaths = ["tests"]
