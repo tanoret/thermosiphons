@@ -6,7 +6,7 @@ from typing import Literal
 
 import pandas as pd
 
-from .thermosyphon import ThermosyphonDesign, pipe_count
+from .thermosyphon import ThermosyphonDesign, booster_capacity_W_m2, pipe_count
 from .units import M_TO_FT, M2_TO_SQFT
 
 InstallType = Literal["Retrofit existing driveway", "New driveway / major replacement"]
@@ -33,10 +33,18 @@ def _pipe_unit_cost_per_ft(diameter_m: float) -> float:
         return 3.85
     if d_mm <= 26:
         return 6.50
-    return 9.75
+    if d_mm <= 35:
+        return 9.75
+    if d_mm <= 42:
+        return 14.50
+    return 22.00
 
 
 def _factory_charge_cost(fluid: str) -> float:
+    if "Assured 90" in fluid:
+        return 155.0
+    if "High-output" in fluid:
+        return 135.0
     if "CO2" in fluid or "refrigerant" in fluid:
         return 82.0
     if "Water" in fluid:
@@ -80,7 +88,16 @@ def estimate_project_cost(
     _line(lines, "End caps, charge port, QA fittings", n_pipes, "pipe", 16.0 if design.diameter_mm <= 26 else 23.0, "Factory-sealed assembly")
     _line(lines, "Working fluid charge + pressure test", n_pipes, "pipe", _factory_charge_cost(design.fluid), design.fluid)
     _line(lines, "External corrosion/wear coating", total_pipe_ft, "ft", 1.35, "Below-grade protection")
-    _line(lines, "Conductive grout / thermal backfill", total_pipe_ft, "ft", 1.65, "Improves contact resistance")
+    high_output = ("High-output" in design.fluid) or ("Assured 90" in design.fluid)
+    hybrid = "Assured 90" in design.fluid or booster_capacity_W_m2(design) > 0
+    _line(lines, "Conductive grout / thermal backfill", total_pipe_ft, "ft", 3.35 if hybrid else (3.10 if high_output else 1.65), "Improves contact resistance")
+    if high_output:
+        _line(lines, "Near-surface heat-spreader strip/manifold", area_sqft, "ft²", 2.85 if hybrid else 2.35, "Spreads pipe heat into the slab")
+        _line(lines, "Enhanced factory QA / pressure rating", n_pipes, "pipe", 55.0 if hybrid else 42.0, "Higher capacity refrigerant-grade assembly")
+    if hybrid:
+        _line(lines, "Thermostat-controlled low-power assist mat/cable", area_sqft, "ft²", 6.50, "Assured 90 package; supplements only during high-risk freeze hours")
+        _line(lines, "Controls, sensors, relay panel", 1, "lot", 1250.0 * region_factor, "Surface sensor + weather-aware controller")
+        _line(lines, "Electrical rough-in and GFCI protection", area_sqft, "ft²", 1.75 * region_factor, "Budgetary allowance; electrician to verify")
 
     if existing:
         _line(lines, "Coring/drilling/excavation labor", total_pipe_ft, "vertical ft", 9.75 * region_factor, "Retrofit production rate")

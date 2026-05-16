@@ -24,6 +24,8 @@ class PerformanceMetrics:
     freeze_degree_hours_C_h: float
     active_hp_hours: int = 0
     annual_hp_kWh_m2: float = 0.0
+    annual_assist_kWh_m2: float = 0.0
+    total_heat_kWh_m2: float = 0.0
 
     def as_dict(self) -> dict[str, float | int]:
         return {
@@ -40,6 +42,8 @@ class PerformanceMetrics:
             "freeze_degree_hours_C_h": self.freeze_degree_hours_C_h,
             "active_hp_hours": self.active_hp_hours,
             "annual_hp_kWh_m2": self.annual_hp_kWh_m2,
+            "annual_assist_kWh_m2": self.annual_assist_kWh_m2,
+            "total_heat_kWh_m2": self.total_heat_kWh_m2,
         }
 
 
@@ -63,7 +67,9 @@ def compute_metrics(result: SimulationResult) -> PerformanceMetrics:
     summer = surf.index.month.isin([6, 7, 8])
     swing = daily_swing(surf)
     hp = result.hp_flux_W_m2.astype(float)
+    assist = result.assist_flux_W_m2.astype(float)
     hp_kwh_m2 = float(hp.sum() * 3600.0 / 3.6e6)
+    assist_kwh_m2 = float(assist.sum() * 3600.0 / 3.6e6)
     freeze_degree_hours = float(np.maximum(0.0, -surf.to_numpy(dtype=float)).sum())
     # Stress index combines freeze-thaw crossings, subfreezing severity, and large daily swings.
     # This is a screening damage index rather than a structural design criterion.
@@ -80,8 +86,10 @@ def compute_metrics(result: SimulationResult) -> PerformanceMetrics:
         p95_daily_swing_C=float(np.nanpercentile(swing, 95)),
         thermal_stress_index=stress,
         freeze_degree_hours_C_h=freeze_degree_hours,
-        active_hp_hours=int((hp > 0.5).sum()),
+        active_hp_hours=int(((hp + assist) > 0.5).sum()),
         annual_hp_kWh_m2=hp_kwh_m2,
+        annual_assist_kWh_m2=assist_kwh_m2,
+        total_heat_kWh_m2=hp_kwh_m2 + assist_kwh_m2,
     )
 
 

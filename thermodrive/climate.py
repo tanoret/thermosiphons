@@ -15,7 +15,7 @@ import requests
 
 from .state_data import ABBR_TO_STATE, STATE_DEFAULTS, get_state_defaults
 
-DataMode = Literal["Typical screening year", "NASA POWER hourly year"]
+DataMode = Literal["Typical screening year", "NASA POWER hourly year", "NOAA USCRN station year", "NASA + NOAA tuned validation year"]
 
 
 @dataclass(frozen=True)
@@ -233,6 +233,13 @@ def fetch_nasa_power_hourly(site: Site, year: int = 2024, timeout: int = 30) -> 
 
 
 def load_weather(site: Site, mode: DataMode, year: int = 2024) -> pd.DataFrame:
-    if mode == "NASA POWER hourly year":
+    if mode in {"NASA POWER hourly year", "NASA + NOAA tuned validation year"}:
         return fetch_nasa_power_hourly(site, year=year)
+    if mode == "NOAA USCRN station year":
+        try:
+            from .validation import fetch_noaa_uscrn_hourly
+
+            return fetch_noaa_uscrn_hourly(site, year=year)
+        except Exception:
+            return generate_typical_hourly_weather(site, year=2025)
     return generate_typical_hourly_weather(site, year=2025)

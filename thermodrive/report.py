@@ -15,7 +15,7 @@ from .units import M2_TO_SQFT, M_TO_FT, currency
 def proposal_markdown(result: OptimizationResult, area_m2: float) -> str:
     base = result.baseline_metrics
     lines = [
-        "# ThermoDrive Passive Thermosyphon Screening Proposal",
+        "# ThermoDrive Driveway Freeze-Risk Screening Proposal",
         "",
         f"**Location:** {result.baseline_result.site.label}",
         f"**Driveway area:** {area_m2 * M2_TO_SQFT:,.0f} ft²",
@@ -47,7 +47,9 @@ def proposal_markdown(result: OptimizationResult, area_m2: float) -> str:
                 f"- Freeze-hour reduction: {comp.get('freeze_hour_reduction_pct', 0):.0f}%",
                 f"- Wet-freeze-hour reduction: {comp.get('wet_freeze_reduction_pct', 0):.0f}%",
                 f"- Freeze-thaw-cycle reduction: {comp.get('freeze_thaw_reduction_pct', 0):.0f}%",
-                f"- Annual heat delivered: {metrics.annual_hp_kWh_m2:.1f} kWh/m²",
+                f"- Passive thermosyphon heat delivered: {metrics.annual_hp_kWh_m2:.1f} kWh/m²",
+                f"- Thermostat assist heat delivered: {metrics.annual_assist_kWh_m2:.1f} kWh/m²",
+                f"- Total heat delivered: {metrics.total_heat_kWh_m2:.1f} kWh/m²",
             ]
         )
     lines.extend(
@@ -55,7 +57,7 @@ def proposal_markdown(result: OptimizationResult, area_m2: float) -> str:
             "",
             "## Important notes",
             result.recommendation_note,
-            "This screening model is for concept sizing and sales qualification. Final proposals require local contractor pricing, utility locate, soil verification, and product-specific thermosyphon testing.",
+            "This screening model is for concept sizing and sales qualification. Final proposals require local contractor pricing, utility locate, soil verification, electrical review for assisted packages, and product-specific thermosyphon testing.",
         ]
     )
     return "\n".join(lines)
