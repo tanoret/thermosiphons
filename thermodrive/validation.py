@@ -20,6 +20,7 @@ import requests
 from .climate import Site
 from .physics import SimulationConfig, SimulationResult, pavement_record, run_thermal_simulation
 from .soil import SoilProfile
+from .units import c_delta_to_f_delta, km_to_miles
 from .state_data import STATE_DEFAULTS
 
 NOAA_USCRN_BASE = "https://www.ncei.noaa.gov/pub/data/uscrn/products/hourly02"
@@ -406,11 +407,11 @@ def tune_model_against_noaa_uscrn(
         )
 
     _, tuned_config, tuned_soil, result, score, best_trial = best_tuple
-    station_note = f"Nearest NOAA USCRN station: {station.station_label}, {station.distance_km:.0f} km away." if station else "NOAA USCRN station selected."
+    station_note = f"Nearest NOAA USCRN station: {station.station_label}, {km_to_miles(station.distance_km):.0f} miles away." if station else "NOAA USCRN station selected."
     note = (
         f"NASA/NOAA tuning applied. {station_note} "
         f"Best screening fit used albedo factor {best_trial['albedo_factor']:.2f}, "
-        f"soil-k factor {best_trial['soil_k_factor']:.2f}, and ground offset {best_trial['ground_offset_C']:+.1f} C."
+        f"soil-k factor {best_trial['soil_k_factor']:.2f}, and ground offset {c_delta_to_f_delta(best_trial['ground_offset_C']):+.1f} F."
     )
     return TuningResult(
         status="NASA/NOAA tuned",
@@ -434,16 +435,16 @@ def validation_summary_table(tuning: TuningResult | None) -> pd.DataFrame:
         rows.extend(
             [
                 ("NOAA station", tuning.station.station_label),
-                ("Station distance", f"{tuning.station.distance_km:.0f} km"),
+                ("Station distance", f"{km_to_miles(tuning.station.distance_km):.0f} miles"),
                 ("Station coordinates", f"{tuning.station.latitude:.3f}, {tuning.station.longitude:.3f}"),
             ]
         )
     if tuning.score is not None:
         rows.extend(
             [
-                ("Surface RMSE", f"{tuning.score.surface_rmse_C:.2f} C" if tuning.score.surface_rmse_C is not None else "n/a"),
-                ("Mean soil RMSE", f"{tuning.score.soil_rmse_mean_C:.2f} C" if tuning.score.soil_rmse_mean_C is not None else "n/a"),
-                ("20-cm soil RMSE", f"{tuning.score.soil_20cm_rmse_C:.2f} C" if tuning.score.soil_20cm_rmse_C is not None else "n/a"),
+                ("Surface RMSE", f"{c_delta_to_f_delta(tuning.score.surface_rmse_C):.2f} F" if tuning.score.surface_rmse_C is not None else "n/a"),
+                ("Mean soil RMSE", f"{c_delta_to_f_delta(tuning.score.soil_rmse_mean_C):.2f} F" if tuning.score.soil_rmse_mean_C is not None else "n/a"),
+                ("8-in soil RMSE", f"{c_delta_to_f_delta(tuning.score.soil_20cm_rmse_C):.2f} F" if tuning.score.soil_20cm_rmse_C is not None else "n/a"),
                 ("Composite score", f"{tuning.score.composite_score:.2f}"),
             ]
         )

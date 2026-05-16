@@ -34,7 +34,19 @@ from thermodrive.report import proposal_markdown, workbook_bytes
 from thermodrive.soil import SoilProfile, choose_soil_profile
 from thermodrive.state_data import STATE_NAMES, get_state_defaults
 from thermodrive.thermosyphon import FLUID_LIBRARY, pipe_count, summarize_design
-from thermodrive.units import FT_TO_M, M2_TO_SQFT, SQFT_TO_M2, c_to_f, currency
+from thermodrive.units import (
+    FT_TO_M,
+    M2_TO_SQFT,
+    SQFT_TO_M2,
+    c_to_f,
+    c_delta_to_f_delta,
+    c_degree_hours_to_f_degree_hours,
+    conductivity_w_mk_to_btu_h_ft_f,
+    currency,
+    kwh_m2_to_kwh_ft2,
+    mm_to_in,
+    w_to_btu_h,
+)
 from thermodrive.validation import TuningResult, tune_model_against_noaa_uscrn, validation_summary_table
 
 st.set_page_config(
@@ -175,7 +187,7 @@ st.markdown(
     """
     <div class="hero">
       <h1>ThermoDrive™ passive driveway thermosyphon designer</h1>
-      <p>Screen winter freeze risk, tune the physics with NASA POWER and NOAA USCRN validation data, size a low-cost thermosyphon field, and export a sales-ready installed-cost proposal.</p>
+      <p>Screen winter freeze risk in Fahrenheit, tune the physics with NASA POWER and NOAA USCRN validation data, size a low-cost thermosyphon field, and export a sales-ready U.S.-unit proposal.</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -303,7 +315,7 @@ design_metrics = opt.design_metrics
 risk = risk_label(base_metrics)
 site_line = f"{site.label} · {site.latitude:.2f}, {site.longitude:.2f} · {site.source}"
 source_line = str(weather["data_source"].iloc[0]) if "data_source" in weather else "Climate data"
-soil_line = f"{soil.name} · k={soil.k_W_mK:.2f} W/m-K · {soil.source}"
+soil_line = f"{soil.name} · k={conductivity_w_mk_to_btu_h_ft_f(soil.k_W_mK):.2f} BTU/h-ft-F · {soil.source}"
 
 badges = [
     f"<span class='badge badge-blue'>{site_line}</span>",
@@ -366,12 +378,12 @@ with p2:
         card("Verified reduction", "N/A", opt.status)
 with p3:
     if design_metrics is not None:
-        card("Passive heat", f"{design_metrics.annual_hp_kWh_m2:.1f} kWh/m²", "Annual thermosyphon heat delivered")
+        card("Passive energy", f"{kwh_m2_to_kwh_ft2(design_metrics.annual_hp_kWh_m2):.2f} kWh/ft2", "Annual thermosyphon energy delivered")
     else:
         card("Passive heat", "—", "No thermosyphon package selected")
 with p4:
     if design_metrics is not None:
-        card("Assist heat", f"{design_metrics.annual_assist_kWh_m2:.1f} kWh/m²", "Annual thermostat assist energy")
+        card("Assist energy", f"{kwh_m2_to_kwh_ft2(design_metrics.annual_assist_kWh_m2):.2f} kWh/ft2", "Annual thermostat assist energy")
     else:
         card("Assist heat", "—", "No assist package selected")
 
@@ -399,7 +411,7 @@ with tab_overview:
         st.subheader("Screening metrics")
         st.metric("Baseline freeze hours", f"{base_metrics.freeze_hours:,}")
         st.metric("Baseline wet-freeze hours", f"{base_metrics.wet_freeze_hours:,}")
-        st.metric("Winter 5th-percentile surface", f"{base_metrics.winter_p5_C:.1f} °C", f"{c_to_f(base_metrics.winter_p5_C):.1f} °F")
+        st.metric("Winter 5th-percentile surface", f"{c_to_f(base_metrics.winter_p5_C):.1f} F")
         if design_metrics is not None:
             comp = opt.comparison
             st.metric("Freeze-hour reduction", f"{comp.get('freeze_hour_reduction_pct', 0):.0f}%")
@@ -418,8 +430,8 @@ with tab_design:
         design_cols[0].metric("Pipe count", f"{dsum['pipe_count']:,}")
         design_cols[1].metric("Spacing", f"{opt.design.spacing_m/FT_TO_M:.1f} ft")
         design_cols[2].metric("Depth", f"{opt.design.depth_m/FT_TO_M:.0f} ft")
-        design_cols[3].metric("Diameter", f"{opt.design.diameter_mm:.0f} mm")
-        design_cols[4].metric("Capacity", f"{dsum['qmax_W_per_pipe']:.0f} W/pipe")
+        design_cols[3].metric("Diameter", f"{mm_to_in(opt.design.diameter_mm):.2f} in")
+        design_cols[4].metric("Capacity", f"{w_to_btu_h(dsum['qmax_W_per_pipe']):.0f} BTU/h-pipe")
         st.plotly_chart(pipe_layout_plot(area_m2, opt.design), use_container_width=True)
 
         st.subheader("Performance comparison")
@@ -428,11 +440,11 @@ with tab_design:
                 {"Metric": "Freeze hours", "Baseline": base_metrics.freeze_hours, "Design": design_metrics.freeze_hours if design_metrics else None, "Reduction": f"{opt.comparison.get('freeze_hour_reduction_pct', 0):.0f}%"},
                 {"Metric": "Wet-freeze hours", "Baseline": base_metrics.wet_freeze_hours, "Design": design_metrics.wet_freeze_hours if design_metrics else None, "Reduction": f"{opt.comparison.get('wet_freeze_reduction_pct', 0):.0f}%"},
                 {"Metric": "Freeze-thaw cycles", "Baseline": base_metrics.freeze_thaw_cycles, "Design": design_metrics.freeze_thaw_cycles if design_metrics else None, "Reduction": f"{opt.comparison.get('freeze_thaw_reduction_pct', 0):.0f}%"},
-                {"Metric": "Freeze degree-hours (°C·h)", "Baseline": round(base_metrics.freeze_degree_hours_C_h, 0), "Design": round(design_metrics.freeze_degree_hours_C_h, 0) if design_metrics else None, "Reduction": f"{opt.comparison.get('freeze_degree_hour_reduction_pct', 0):.0f}%"},
-                {"Metric": "95th-percentile daily swing (°C)", "Baseline": round(base_metrics.p95_daily_swing_C, 1), "Design": round(design_metrics.p95_daily_swing_C, 1) if design_metrics else None, "Reduction": f"{opt.comparison.get('daily_swing_reduction_pct', 0):.0f}%"},
-                {"Metric": "Passive heat delivered (kWh/m²)", "Baseline": 0, "Design": round(design_metrics.annual_hp_kWh_m2, 1) if design_metrics else None, "Reduction": "—"},
-                {"Metric": "Assist heat delivered (kWh/m²)", "Baseline": 0, "Design": round(design_metrics.annual_assist_kWh_m2, 1) if design_metrics else None, "Reduction": "—"},
-                {"Metric": "Total heat delivered (kWh/m²)", "Baseline": 0, "Design": round(design_metrics.total_heat_kWh_m2, 1) if design_metrics else None, "Reduction": "—"},
+                {"Metric": "Freeze degree-hours (F-h)", "Baseline": round(c_degree_hours_to_f_degree_hours(base_metrics.freeze_degree_hours_C_h), 0), "Design": round(c_degree_hours_to_f_degree_hours(design_metrics.freeze_degree_hours_C_h), 0) if design_metrics else None, "Reduction": f"{opt.comparison.get('freeze_degree_hour_reduction_pct', 0):.0f}%"},
+                {"Metric": "95th-percentile daily swing (F)", "Baseline": round(c_delta_to_f_delta(base_metrics.p95_daily_swing_C), 1), "Design": round(c_delta_to_f_delta(design_metrics.p95_daily_swing_C), 1) if design_metrics else None, "Reduction": f"{opt.comparison.get('daily_swing_reduction_pct', 0):.0f}%"},
+                {"Metric": "Passive energy delivered (kWh/ft2)", "Baseline": 0, "Design": round(kwh_m2_to_kwh_ft2(design_metrics.annual_hp_kWh_m2), 2) if design_metrics else None, "Reduction": "-"},
+                {"Metric": "Assist energy delivered (kWh/ft2)", "Baseline": 0, "Design": round(kwh_m2_to_kwh_ft2(design_metrics.annual_assist_kWh_m2), 2) if design_metrics else None, "Reduction": "-"},
+                {"Metric": "Total energy delivered (kWh/ft2)", "Baseline": 0, "Design": round(kwh_m2_to_kwh_ft2(design_metrics.total_heat_kWh_m2), 2) if design_metrics else None, "Reduction": "-"},
             ]
         )
         st.dataframe(perf, hide_index=True, use_container_width=True)
@@ -441,9 +453,25 @@ with tab_design:
         st.plotly_chart(candidate_scatter(opt.candidates), use_container_width=True)
         if not opt.candidates.empty:
             display_candidates = opt.candidates.copy()
+            if "diameter_mm" in display_candidates:
+                display_candidates["diameter_in"] = display_candidates["diameter_mm"].map(mm_to_in)
+                display_candidates = display_candidates.drop(columns=["diameter_mm"])
+            if "estimated_annual_kWh_m2" in display_candidates:
+                display_candidates["estimated_annual_kWh_ft2"] = display_candidates["estimated_annual_kWh_m2"].map(kwh_m2_to_kwh_ft2)
+                display_candidates = display_candidates.drop(columns=["estimated_annual_kWh_m2"])
+            rename_cols = {
+                "spacing_ft": "spacing_ft",
+                "depth_ft": "depth_ft",
+                "diameter_in": "diameter_in",
+                "estimated_annual_kWh_ft2": "estimated_kWh_ft2_yr",
+            }
+            display_candidates = display_candidates.rename(columns=rename_cols)
             money_cols = [c for c in display_candidates.columns if "cost" in c or c == "base_cost"]
             for col in money_cols:
                 display_candidates[col] = display_candidates[col].map(lambda x: f"${x:,.0f}" if pd.notna(x) else "")
+            for col in ["spacing_ft", "depth_ft", "diameter_in", "estimated_kWh_ft2_yr"]:
+                if col in display_candidates:
+                    display_candidates[col] = display_candidates[col].map(lambda x: f"{x:.2f}" if pd.notna(x) else "")
             st.dataframe(display_candidates.head(20), hide_index=True, use_container_width=True)
 
 with tab_technical:
@@ -522,7 +550,7 @@ with tab_assumptions:
         """
         **What the model does:** solves a 1D transient finite-difference driveway/base/soil heat equation with hourly air temperature, wind, humidity, solar radiation, rain/snow energy loads, and a linearized surface energy balance. The thermosyphon field is represented as a one-way heat-transfer source/sink distributed over a finite evaporator length and a near-surface condenser/heat-spreader zone.
 
-        **NASA/NOAA tuning:** NASA POWER provides gridded nationwide hourly weather; NOAA USCRN provides high-quality observed validation data where nearby stations exist. The tuning routine fits albedo, soil conductivity, ground mean offset, convection, and sky-temperature correction within conservative bounds.
+        **NASA/NOAA tuning:** NASA POWER provides gridded nationwide hourly weather; NOAA USCRN provides high-quality observed validation data where nearby stations exist. The tuning routine fits albedo, soil conductivity, ground mean offset, convection, and sky-temperature correction within conservative bounds. Results are displayed in U.S. units while the solver keeps SI units internally.
 
         **What the model does not promise:** guaranteed passive-only snow melting during design blizzards. A wickless vertical thermosyphon requires gravity return of condensate, so it is useful for upward winter heat transport but is not a summer cooling device. The Assured 90 package is intentionally hybrid: thermosyphons reduce the base load and a controlled assist layer closes the remaining freeze-hour gap.
 

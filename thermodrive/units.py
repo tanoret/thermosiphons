@@ -43,3 +43,43 @@ def currency(value: float) -> str:
     if value >= 10_000:
         return f"${value/1000:,.0f}k"
     return f"${value:,.0f}"
+
+# U.S. customary display conversions. The thermal model remains SI internally.
+W_TO_BTU_H = 3.412141633
+W_M2_TO_BTU_H_FT2 = 1.0 / BTU_H_FT2_TO_W_M2
+KWH_M2_TO_KWH_FT2 = 1.0 / M2_TO_SQFT
+MM_TO_IN = 1.0 / 25.4
+KM_TO_MI = 0.6213711922
+W_MK_TO_BTU_H_FT_F = 0.577789318
+
+
+def c_delta_to_f_delta(delta_c: float) -> float:
+    return delta_c * 9.0 / 5.0
+
+
+def c_degree_hours_to_f_degree_hours(value_c_h: float) -> float:
+    return value_c_h * 9.0 / 5.0
+
+
+def w_to_btu_h(power_w: float) -> float:
+    return power_w * W_TO_BTU_H
+
+
+def w_m2_to_btu_h_ft2(flux_w_m2: float) -> float:
+    return flux_w_m2 * W_M2_TO_BTU_H_FT2
+
+
+def kwh_m2_to_kwh_ft2(energy_kwh_m2: float) -> float:
+    return energy_kwh_m2 * KWH_M2_TO_KWH_FT2
+
+
+def mm_to_in(length_mm: float) -> float:
+    return length_mm * MM_TO_IN
+
+
+def km_to_miles(distance_km: float) -> float:
+    return distance_km * KM_TO_MI
+
+
+def conductivity_w_mk_to_btu_h_ft_f(k_w_mk: float) -> float:
+    return k_w_mk * W_MK_TO_BTU_H_FT_F

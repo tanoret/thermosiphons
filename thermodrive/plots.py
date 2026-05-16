@@ -1,4 +1,9 @@
-"""Plotly visualizations for the Streamlit sales dashboard."""
+"""Plotly visualizations for the Streamlit sales dashboard.
+
+The physics engine uses SI internally, but every customer-facing plot in this
+module is displayed in U.S. customary units: deg F, ft, ft2, BTU/h-ft2, and
+kWh/ft2.
+"""
 from __future__ import annotations
 
 import math
@@ -11,7 +16,16 @@ import plotly.express as px
 from .cost import CostEstimate, cost_summary_table
 from .physics import SimulationResult
 from .thermosyphon import ThermosyphonDesign, pipe_count
-from .units import M2_TO_SQFT, M_TO_FT
+from .units import (
+    M2_TO_SQFT,
+    M_TO_FT,
+    c_to_f,
+    c_delta_to_f_delta,
+    conductivity_w_mk_to_btu_h_ft_f,
+    kwh_m2_to_kwh_ft2,
+    mm_to_in,
+    w_m2_to_btu_h_ft2,
+)
 
 BRAND_BLUE = "#1E88E5"
 BRAND_NAVY = "#102033"
@@ -19,6 +33,7 @@ BRAND_ORANGE = "#F39C12"
 BRAND_GREEN = "#2E7D32"
 BRAND_RED = "#C62828"
 GRID = "rgba(16,32,51,0.12)"
+FREEZING_F = 32.0
 
 
 def _base_layout(fig: go.Figure, title: str, ytitle: str | None = None) -> go.Figure:
@@ -35,19 +50,23 @@ def _base_layout(fig: go.Figure, title: str, ytitle: str | None = None) -> go.Fi
     return fig
 
 
+def _series_f(series: pd.Series | np.ndarray) -> pd.Series | np.ndarray:
+    return c_to_f(series)  # numpy/pandas arithmetic works with this scalar helper
+
+
 def climate_temperature_plot(weather: pd.DataFrame, baseline: SimulationResult | None = None, design: SimulationResult | None = None) -> go.Figure:
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=weather.index, y=weather["air_temp_C"], name="Air", line=dict(color="#78909C", width=1)))
+    fig.add_trace(go.Scatter(x=weather.index, y=_series_f(weather["air_temp_C"]), name="Air", line=dict(color="#78909C", width=1)))
     if "observed_surface_C" in weather:
         obs = weather["observed_surface_C"].replace([-9999, -9999.0], np.nan)
-        fig.add_trace(go.Scatter(x=weather.index, y=obs, name="NOAA observed surface", line=dict(color="#263238", width=1.2, dash="dot"), visible="legendonly"))
+        fig.add_trace(go.Scatter(x=weather.index, y=_series_f(obs), name="NOAA observed surface", line=dict(color="#263238", width=1.2, dash="dot"), visible="legendonly"))
     if baseline is not None:
-        fig.add_trace(go.Scatter(x=baseline.time_series.index, y=baseline.surface_C, name="Baseline driveway", line=dict(color=BRAND_ORANGE, width=1.6)))
+        fig.add_trace(go.Scatter(x=baseline.time_series.index, y=_series_f(baseline.surface_C), name="Baseline driveway", line=dict(color=BRAND_ORANGE, width=1.6)))
     if design is not None:
-        fig.add_trace(go.Scatter(x=design.time_series.index, y=design.surface_C, name="With thermosyphons", line=dict(color=BRAND_BLUE, width=1.8)))
-    fig.add_hrect(y0=-40, y1=0, fillcolor="rgba(198,40,40,0.06)", line_width=0)
-    fig.add_hline(y=0, line=dict(color=BRAND_RED, dash="dash"), annotation_text="Freezing", annotation_position="bottom right")
-    fig = _base_layout(fig, "Hourly temperature profile", "Temperature (°C)")
+        fig.add_trace(go.Scatter(x=design.time_series.index, y=_series_f(design.surface_C), name="With thermosyphons", line=dict(color=BRAND_BLUE, width=1.8)))
+    fig.add_hrect(y0=-40, y1=FREEZING_F, fillcolor="rgba(198,40,40,0.06)", line_width=0)
+    fig.add_hline(y=FREEZING_F, line=dict(color=BRAND_RED, dash="dash"), annotation_text="Freezing 32 F", annotation_position="bottom right")
+    fig = _base_layout(fig, "Hourly temperature profile", "Temperature (deg F)")
     fig.update_xaxes(rangeslider=dict(visible=True, thickness=0.05))
     return fig
 
@@ -62,22 +81,22 @@ def freeze_calendar_plot(baseline: SimulationResult, design: SimulationResult | 
     fig.add_trace(go.Bar(x=daily.index, y=daily["Baseline"], name="Baseline freeze hours", marker_color=BRAND_ORANGE))
     if "With thermosyphons" in daily:
         fig.add_trace(go.Bar(x=daily.index, y=daily["With thermosyphons"], name="Design freeze hours", marker_color=BRAND_BLUE))
-    return _base_layout(fig, "Daily freeze-hour calendar", "Hours below 0°C")
+    return _base_layout(fig, "Daily freeze-hour calendar", "Hours below 32 F")
 
 
 def soil_heatmap(result: SimulationResult, title: str = "Soil/driveway temperature map") -> go.Figure:
     stride = max(1, len(result.time_series) // 700)
-    z = result.temperature_C[::stride, :].T
+    z_f = c_to_f(result.temperature_C[::stride, :].T)
     x = result.time_series.index[::stride]
     fig = go.Figure(
         data=go.Heatmap(
             x=x,
             y=result.depth_m * M_TO_FT,
-            z=z,
+            z=z_f,
             colorscale="RdBu_r",
-            zmid=0,
-            colorbar=dict(title="°C"),
-            hovertemplate="%{x}<br>Depth %{y:.1f} ft<br>%{z:.1f} °C<extra></extra>",
+            zmid=FREEZING_F,
+            colorbar=dict(title="deg F"),
+            hovertemplate="%{x}<br>Depth %{y:.1f} ft<br>%{z:.1f} deg F<extra></extra>",
         )
     )
     fig.update_yaxes(autorange="reversed", title="Depth (ft)")
@@ -91,7 +110,7 @@ def seasonal_depth_profiles(baseline: SimulationResult, design: SimulationResult
         idx = min(max((day - 1) * 24 + 12, 0), len(baseline.time_series) - 1)
         fig.add_trace(
             go.Scatter(
-                x=baseline.temperature_C[idx, :],
+                x=c_to_f(baseline.temperature_C[idx, :]),
                 y=baseline.depth_m * M_TO_FT,
                 mode="lines",
                 name=f"Baseline {label}",
@@ -101,24 +120,25 @@ def seasonal_depth_profiles(baseline: SimulationResult, design: SimulationResult
         if design is not None:
             fig.add_trace(
                 go.Scatter(
-                    x=design.temperature_C[idx, :],
+                    x=c_to_f(design.temperature_C[idx, :]),
                     y=design.depth_m * M_TO_FT,
                     mode="lines",
                     name=f"Design {label}",
                     line=dict(width=2.0),
                 )
             )
-    fig.add_vline(x=0, line=dict(color=BRAND_RED, dash="dash"))
+    fig.add_vline(x=FREEZING_F, line=dict(color=BRAND_RED, dash="dash"))
     fig.update_yaxes(autorange="reversed")
+    fig.update_xaxes(title="Temperature (deg F)")
     return _base_layout(fig, "Seasonal temperature profiles", "Depth (ft)")
 
 
 def hp_flux_plot(design: SimulationResult) -> go.Figure:
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=design.time_series.index, y=design.hp_flux_W_m2, name="Passive thermosyphon heat", fill="tozeroy", line=dict(color=BRAND_BLUE)))
+    fig.add_trace(go.Scatter(x=design.time_series.index, y=w_m2_to_btu_h_ft2(design.hp_flux_W_m2), name="Passive thermosyphon heat", fill="tozeroy", line=dict(color=BRAND_BLUE)))
     if "assist_flux_W_m2" in design.time_series and design.assist_flux_W_m2.max() > 0:
-        fig.add_trace(go.Scatter(x=design.time_series.index, y=design.assist_flux_W_m2, name="Thermostat assist heat", fill="tozeroy", line=dict(color=BRAND_GREEN)))
-    return _base_layout(fig, "Heat delivered to driveway", "W/m²")
+        fig.add_trace(go.Scatter(x=design.time_series.index, y=w_m2_to_btu_h_ft2(design.assist_flux_W_m2), name="Thermostat assist heat", fill="tozeroy", line=dict(color=BRAND_GREEN)))
+    return _base_layout(fig, "Heat delivered to driveway", "BTU/h-ft2")
 
 
 def cost_waterfall(estimate: CostEstimate) -> go.Figure:
@@ -142,9 +162,13 @@ def candidate_scatter(candidates: pd.DataFrame) -> go.Figure:
     if candidates.empty:
         return _base_layout(fig, "Candidate design search", "Verified reduction (%)")
     y_col = "verified_primary_reduction_pct" if "verified_primary_reduction_pct" in candidates.columns else "estimated_reduction_pct"
-    hover_cols = ["spacing_ft", "depth_ft", "diameter_mm", "pipe_count", "cost_per_sqft"]
     df = candidates.copy()
     df[y_col] = df[y_col].fillna(df.get("estimated_reduction_pct", 0))
+    if "diameter_mm" in df.columns and "diameter_in" not in df.columns:
+        df["diameter_in"] = df["diameter_mm"].map(mm_to_in)
+    if "estimated_annual_kWh_m2" in df.columns and "estimated_annual_kWh_ft2" not in df.columns:
+        df["estimated_annual_kWh_ft2"] = df["estimated_annual_kWh_m2"].map(kwh_m2_to_kwh_ft2)
+    hover_cols = [c for c in ["spacing_ft", "depth_ft", "diameter_in", "pipe_count", "cost_per_sqft", "estimated_annual_kWh_ft2"] if c in df.columns]
     fig = px.scatter(
         df,
         x="base_cost",
@@ -152,7 +176,13 @@ def candidate_scatter(candidates: pd.DataFrame) -> go.Figure:
         size="pipe_count",
         color="depth_ft",
         hover_data=hover_cols,
-        labels={"base_cost": "Installed cost ($)", y_col: "Reduction (%)", "depth_ft": "Depth (ft)"},
+        labels={
+            "base_cost": "Installed cost ($)",
+            y_col: "Reduction (%)",
+            "depth_ft": "Depth (ft)",
+            "diameter_in": "Diameter (in)",
+            "estimated_annual_kWh_ft2": "Energy (kWh/ft2-yr)",
+        },
         title="Candidate design search",
     )
     fig.update_traces(marker=dict(opacity=0.78, line=dict(width=0.5, color="white")))
@@ -193,17 +223,17 @@ def monthly_performance_plot(baseline: SimulationResult, design: SimulationResul
     df["Baseline freeze hours"] = (baseline.surface_C < 0.0).astype(int)
     if design is not None:
         df["Design freeze hours"] = (design.surface_C < 0.0).astype(int)
-        df["Passive kWh/m2"] = design.hp_flux_W_m2 * 3600.0 / 3.6e6
-        df["Assist kWh/m2"] = design.assist_flux_W_m2 * 3600.0 / 3.6e6
+        df["Passive kWh/ft2"] = kwh_m2_to_kwh_ft2(design.hp_flux_W_m2 * 3600.0 / 3.6e6)
+        df["Assist kWh/ft2"] = kwh_m2_to_kwh_ft2(design.assist_flux_W_m2 * 3600.0 / 3.6e6)
     monthly = df.resample("MS").sum()
     fig = go.Figure()
     fig.add_trace(go.Bar(x=monthly.index, y=monthly["Baseline freeze hours"], name="Baseline freeze hours", marker_color=BRAND_ORANGE))
     if design is not None:
         fig.add_trace(go.Bar(x=monthly.index, y=monthly["Design freeze hours"], name="Design freeze hours", marker_color=BRAND_BLUE))
-        fig.add_trace(go.Scatter(x=monthly.index, y=monthly["Passive kWh/m2"], name="Passive kWh/m2", yaxis="y2", line=dict(color=BRAND_GREEN, width=2.4)))
-        if "Assist kWh/m2" in monthly and monthly["Assist kWh/m2"].sum() > 0:
-            fig.add_trace(go.Scatter(x=monthly.index, y=monthly["Assist kWh/m2"], name="Assist kWh/m2", yaxis="y2", line=dict(color=BRAND_NAVY, width=2.2, dash="dot")))
-        fig.update_layout(yaxis2=dict(title="kWh/m2", overlaying="y", side="right", showgrid=False))
+        fig.add_trace(go.Scatter(x=monthly.index, y=monthly["Passive kWh/ft2"], name="Passive kWh/ft2", yaxis="y2", line=dict(color=BRAND_GREEN, width=2.4)))
+        if "Assist kWh/ft2" in monthly and monthly["Assist kWh/ft2"].sum() > 0:
+            fig.add_trace(go.Scatter(x=monthly.index, y=monthly["Assist kWh/ft2"], name="Assist kWh/ft2", yaxis="y2", line=dict(color=BRAND_NAVY, width=2.2, dash="dot")))
+        fig.update_layout(yaxis2=dict(title="kWh/ft2", overlaying="y", side="right", showgrid=False))
     return _base_layout(fig, "Monthly risk reduction and delivered heat", "Freeze hours")
 
 
@@ -212,40 +242,40 @@ def source_comparison_plot(nasa_weather: pd.DataFrame | None, noaa_weather: pd.D
     fig = go.Figure()
     if nasa_weather is not None and not nasa_weather.empty:
         daily = nasa_weather[["air_temp_C", "ghi_W_m2"]].resample("D").mean()
-        fig.add_trace(go.Scatter(x=daily.index, y=daily["air_temp_C"], name="NASA air temp", line=dict(color=BRAND_BLUE, width=1.8)))
+        fig.add_trace(go.Scatter(x=daily.index, y=c_to_f(daily["air_temp_C"]), name="NASA air temp", line=dict(color=BRAND_BLUE, width=1.8)))
     if noaa_weather is not None and not noaa_weather.empty:
         daily2 = noaa_weather[["air_temp_C", "ghi_W_m2"]].resample("D").mean()
-        fig.add_trace(go.Scatter(x=daily2.index, y=daily2["air_temp_C"], name="NOAA air temp", line=dict(color=BRAND_ORANGE, width=1.8)))
-    fig.add_hline(y=0, line=dict(color=BRAND_RED, dash="dash"))
-    return _base_layout(fig, "NASA POWER vs NOAA USCRN daily air temperature", "Daily mean air temp (C)")
+        fig.add_trace(go.Scatter(x=daily2.index, y=c_to_f(daily2["air_temp_C"]), name="NOAA air temp", line=dict(color=BRAND_ORANGE, width=1.8)))
+    fig.add_hline(y=FREEZING_F, line=dict(color=BRAND_RED, dash="dash"))
+    return _base_layout(fig, "NASA POWER vs NOAA USCRN daily air temperature", "Daily mean air temp (deg F)")
 
 
 def validation_overlay_plot(validation_result: SimulationResult | None, noaa_weather: pd.DataFrame | None) -> go.Figure:
     fig = go.Figure()
     if validation_result is not None:
-        fig.add_trace(go.Scatter(x=validation_result.time_series.index, y=validation_result.surface_C, name="Modeled surface", line=dict(color=BRAND_BLUE, width=1.8)))
+        fig.add_trace(go.Scatter(x=validation_result.time_series.index, y=c_to_f(validation_result.surface_C), name="Modeled surface", line=dict(color=BRAND_BLUE, width=1.8)))
     if noaa_weather is not None and not noaa_weather.empty and "observed_surface_C" in noaa_weather:
         obs = noaa_weather["observed_surface_C"].replace([-9999, -9999.0], np.nan)
-        fig.add_trace(go.Scatter(x=noaa_weather.index, y=obs, name="NOAA IR surface", line=dict(color=BRAND_ORANGE, width=1.3)))
-    fig.add_hline(y=0, line=dict(color=BRAND_RED, dash="dash"))
-    return _base_layout(fig, "Validation: modeled vs NOAA observed surface temperature", "Surface temperature (C)")
+        fig.add_trace(go.Scatter(x=noaa_weather.index, y=c_to_f(obs), name="NOAA IR surface", line=dict(color=BRAND_ORANGE, width=1.3)))
+    fig.add_hline(y=FREEZING_F, line=dict(color=BRAND_RED, dash="dash"))
+    return _base_layout(fig, "Validation: modeled vs NOAA observed surface temperature", "Surface temperature (deg F)")
 
 
 def soil_validation_plot(validation_result: SimulationResult | None, noaa_weather: pd.DataFrame | None) -> go.Figure:
     fig = go.Figure()
     if noaa_weather is None or noaa_weather.empty:
-        return _base_layout(fig, "Validation: soil temperatures", "Soil temperature (C)")
-    depths = [(5, 0.05), (20, 0.20), (50, 0.50), (100, 1.00)]
-    for cm, m in depths:
+        return _base_layout(fig, "Validation: soil temperatures", "Soil temperature (deg F)")
+    depths = [(2, 5, 0.05), (8, 20, 0.20), (20, 50, 0.50), (39, 100, 1.00)]
+    for inches, cm, m in depths:
         obs_col = f"observed_soil_{cm}cm_C"
         if obs_col in noaa_weather:
             obs = noaa_weather[obs_col].replace([-9999, -9999.0], np.nan).resample("D").mean()
-            fig.add_trace(go.Scatter(x=obs.index, y=obs, name=f"NOAA {cm} cm", line=dict(width=1.2, dash="dot")))
+            fig.add_trace(go.Scatter(x=obs.index, y=c_to_f(obs), name=f"NOAA {inches} in", line=dict(width=1.2, dash="dot")))
         if validation_result is not None and validation_result.depth_m.max() >= m:
             values = np.array([np.interp(m, validation_result.depth_m, row) for row in validation_result.temperature_C], dtype=float)
-            model = pd.Series(values, index=validation_result.time_series.index).resample("D").mean()
-            fig.add_trace(go.Scatter(x=model.index, y=model, name=f"Model {cm} cm", line=dict(width=1.8)))
-    return _base_layout(fig, "Validation: daily soil-temperature profiles", "Soil temperature (C)")
+            model = pd.Series(c_to_f(values), index=validation_result.time_series.index).resample("D").mean()
+            fig.add_trace(go.Scatter(x=model.index, y=model, name=f"Model {inches} in", line=dict(width=1.8)))
+    return _base_layout(fig, "Validation: daily soil-temperature profiles", "Soil temperature (deg F)")
 
 
 def tuning_score_plot(trials: pd.DataFrame | None) -> go.Figure:
@@ -254,13 +284,28 @@ def tuning_score_plot(trials: pd.DataFrame | None) -> go.Figure:
         return _base_layout(fig, "Tuning trials", "Composite RMSE score")
     df = trials.reset_index(drop=True).copy()
     df["trial"] = np.arange(1, len(df) + 1)
+    if "surface_rmse_C" in df:
+        df["surface_rmse_F"] = df["surface_rmse_C"].map(c_delta_to_f_delta)
+    if "soil_rmse_mean_C" in df:
+        df["soil_rmse_mean_F"] = df["soil_rmse_mean_C"].map(c_delta_to_f_delta)
+    if "ground_offset_C" in df:
+        df["ground_offset_F_delta"] = df["ground_offset_C"].map(c_delta_to_f_delta)
+    if "soil_k_W_mK" in df:
+        df["soil_k_Btu_h_ft_F"] = df["soil_k_W_mK"].map(conductivity_w_mk_to_btu_h_ft_f)
+    hover_data = [c for c in ["surface_rmse_F", "soil_rmse_mean_F", "albedo_factor", "soil_k_factor", "ground_offset_F_delta"] if c in df.columns]
     fig = px.scatter(
         df,
         x="trial",
         y="composite_score",
-        size="soil_k_W_mK" if "soil_k_W_mK" in df else None,
+        size="soil_k_Btu_h_ft_F" if "soil_k_Btu_h_ft_F" in df else None,
         color="custom_albedo" if "custom_albedo" in df else None,
-        hover_data=[c for c in ["surface_rmse_C", "soil_rmse_mean_C", "albedo_factor", "soil_k_factor", "ground_offset_C"] if c in df.columns],
+        hover_data=hover_data,
+        labels={
+            "surface_rmse_F": "Surface RMSE (deg F)",
+            "soil_rmse_mean_F": "Mean soil RMSE (deg F)",
+            "ground_offset_F_delta": "Ground offset (deg F)",
+            "soil_k_Btu_h_ft_F": "Soil k (BTU/h-ft-F)",
+        },
         title="NOAA calibration trial scores",
     )
     fig.update_traces(marker=dict(opacity=0.85, line=dict(width=0.5, color="white")))

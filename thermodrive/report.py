@@ -9,7 +9,14 @@ import pandas as pd
 from .metrics import PerformanceMetrics
 from .optimizer import OptimizationResult
 from .thermosyphon import summarize_design
-from .units import M2_TO_SQFT, M_TO_FT, currency
+from .units import (
+    M2_TO_SQFT,
+    M_TO_FT,
+    c_to_f,
+    currency,
+    kwh_m2_to_kwh_ft2,
+    mm_to_in,
+)
 
 
 def proposal_markdown(result: OptimizationResult, area_m2: float) -> str:
@@ -26,7 +33,7 @@ def proposal_markdown(result: OptimizationResult, area_m2: float) -> str:
         f"- Freeze hours: {base.freeze_hours:,}",
         f"- Wet-freeze hours: {base.wet_freeze_hours:,}",
         f"- Freeze-thaw cycles: {base.freeze_thaw_cycles:,}",
-        f"- Winter 5th-percentile surface temperature: {base.winter_p5_C:.1f} °C",
+        f"- Winter 5th-percentile surface temperature: {c_to_f(base.winter_p5_C):.1f} F",
     ]
     if result.design is not None and result.design_metrics is not None and result.cost is not None:
         design = result.design
@@ -38,7 +45,7 @@ def proposal_markdown(result: OptimizationResult, area_m2: float) -> str:
                 "## Recommended design",
                 f"- Pipe spacing: {design.spacing_m * M_TO_FT:.1f} ft",
                 f"- Pipe depth: {design.depth_m * M_TO_FT:.1f} ft",
-                f"- Pipe diameter: {design.diameter_mm:.0f} mm",
+                f"- Pipe diameter: {mm_to_in(design.diameter_mm):.2f} in",
                 f"- Working fluid package: {design.fluid}",
                 f"- Estimated installed cost: {currency(result.cost.total_base)} ({currency(result.cost.total_low)}–{currency(result.cost.total_high)})",
                 f"- Cost per ft²: ${result.cost.cost_per_sqft:,.2f}",
@@ -48,9 +55,9 @@ def proposal_markdown(result: OptimizationResult, area_m2: float) -> str:
                 f"- Freeze-hour reduction: {comp.get('freeze_hour_reduction_pct', 0):.0f}%",
                 f"- Wet-freeze-hour reduction: {comp.get('wet_freeze_reduction_pct', 0):.0f}%",
                 f"- Freeze-thaw-cycle reduction: {comp.get('freeze_thaw_reduction_pct', 0):.0f}%",
-                f"- Passive thermosyphon heat delivered: {metrics.annual_hp_kWh_m2:.1f} kWh/m²",
-                f"- Thermostat assist heat delivered: {metrics.annual_assist_kWh_m2:.1f} kWh/m²",
-                f"- Total heat delivered: {metrics.total_heat_kWh_m2:.1f} kWh/m²",
+                f"- Passive thermosyphon energy delivered: {kwh_m2_to_kwh_ft2(metrics.annual_hp_kWh_m2):.2f} kWh/ft2",
+                f"- Thermostat assist energy delivered: {kwh_m2_to_kwh_ft2(metrics.annual_assist_kWh_m2):.2f} kWh/ft2",
+                f"- Total energy delivered: {kwh_m2_to_kwh_ft2(metrics.total_heat_kWh_m2):.2f} kWh/ft2",
             ]
         )
     lines.extend(

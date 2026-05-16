@@ -1,5 +1,7 @@
 # ThermoDrive™ Driveway Freeze-Risk Designer
 
+**v6.2 U.S. units update:** customer-facing dashboard, plots, validation summaries, and proposal exports now use Fahrenheit, feet, inches, square feet, BTU/h-ft2 heat flux, and kWh/ft2 annual energy. The solver still uses SI units internally for numerical stability.
+
 ThermoDrive is a Streamlit sales and engineering screening application for sizing vertical wickless thermosyphon fields and optional controlled assist packages beneath residential driveways. It combines a transient finite-difference driveway/soil thermal model, NASA/NOAA climate validation, a conservative thermosyphon performance model, a mixed discrete design search, and a transparent installed-cost/BOM estimate.
 
 > Important: a vertical wickless thermosyphon is modeled as a one-way upward heat-transfer device. It can reduce winter freeze risk when deeper soil is warmer than the driveway surface. The Assured 90 package is explicitly hybrid: passive thermosyphons reduce the base load, while thermostat-controlled assist closes the remaining freeze-hour gap.
@@ -12,7 +14,7 @@ ThermoDrive is a Streamlit sales and engineering screening application for sizin
 - Replaced the previous single-cell thermosyphon coupling with a **distributed evaporator/condenser model** that uses finite evaporator length, thermal grout, and near-surface heat-spreader behavior.
 - Expanded the optimizer to target freeze-hour reduction directly, search deeper/larger hybrid candidates, and show whether 90% is achieved by passive-only or hybrid operation.
 
-- Added **NOAA USCRN hourly validation** mode with observed air temperature, precipitation, solar radiation, RH, infrared surface temperature, soil moisture, and soil temperature at 5/10/20/50/100 cm when a nearby station is available.
+- Added **NOAA USCRN hourly validation** mode with observed air temperature, precipitation, solar radiation, RH, infrared surface temperature, soil moisture, and soil temperature at 2/4/8/20/39 in equivalent depths when a nearby station is available.
 - Added **NASA + NOAA tuned validation year** mode: NASA POWER provides the gridded project weather; nearest NOAA USCRN data are used to tune albedo, soil conductivity, ground-temperature offset, convection, and sky-temperature correction within conservative screening bounds.
 - Added a **Validation & tuning** dashboard tab with NASA-vs-NOAA comparison, observed-vs-modeled surface temperature, observed-vs-modeled soil temperature, and calibration trial scores.
 - Improved the finite-difference model with rain/snow energy loads, wet-pavement evaporation, ground-mean offset tuning, and working-fluid temperature derating.
@@ -124,7 +126,7 @@ rho_cp(z) dT/dt = d/dz(k(z) dT/dz) + S_hp(z,t)
 
 The top boundary uses a linearized surface energy balance with solar absorption, convection, longwave exchange, wet-pavement evaporation, and rain/snow phase-change loads. The lower boundary uses annual mean ground temperature plus a small geothermal-gradient term. NASA/NOAA tuning can adjust the effective surface/soil parameters within conservative bounds.
 
-The thermosyphon model adds an upward heat flux between a distributed evaporator zone and a distributed near-surface condenser/heat-spreader zone when the deeper soil is warmer than the slab by the startup margin. Heat flux is limited by pipe conductance, pipe capacity, fluid temperature envelope, spacing/tributary area, and a numerical equalization limiter. Hybrid designs also include a thermostat-controlled surface-assist heat flux with an explicit peak W/m² limit, setpoint, and annual kWh/m² reporting.
+The thermosyphon model adds an upward heat flux between a distributed evaporator zone and a distributed near-surface condenser/heat-spreader zone when the deeper soil is warmer than the slab by the startup margin. Heat flux is limited by pipe conductance, pipe capacity, fluid temperature envelope, spacing/tributary area, and a numerical equalization limiter. Hybrid designs also include a thermostat-controlled surface-assist heat flux with an explicit peak BTU/h-ft2-equivalent limit, setpoint, and annual kWh/ft2 reporting.
 
 ## Cost model
 
@@ -184,7 +186,7 @@ Key v4 calculation changes:
 - distributed evaporator/source coupling over the lower pipe length;
 - distributed condenser/sink coupling over the slab heat-spreader zone;
 - separate `assist_flux_W_m2` time series;
-- annual passive, assist, and total kWh/m² metrics;
+- annual passive, assist, and total kWh/ft2 metrics;
 - candidate table columns for verified assist energy;
 - target slider extended to 95%;
 - default Idaho demo set to the Assured 90 package.

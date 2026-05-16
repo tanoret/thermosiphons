@@ -14,7 +14,7 @@ from typing import Literal
 import pandas as pd
 
 from .thermosyphon import ThermosyphonDesign, booster_capacity_W_m2, pipe_count
-from .units import M_TO_FT, M2_TO_SQFT
+from .units import M_TO_FT, M2_TO_SQFT, mm_to_in
 
 InstallType = Literal["Retrofit existing driveway", "New driveway / major replacement"]
 
@@ -161,7 +161,7 @@ def estimate_project_cost(
         estimated_factory_cost,
         (
             f"Design-adjusted from ${vendor_anchor:,.0f}/pipe vendor benchmark; "
-            f"{design.diameter_mm:.0f} mm x {length_ft:.0f} ft, {design.fluid}"
+            f"{mm_to_in(design.diameter_mm):.2f} in x {length_ft:.0f} ft, {design.fluid}"
         ),
     )
     _line(
