@@ -4,7 +4,14 @@ import pandas as pd
 import streamlit as st
 
 from thermodrive.climate import load_weather, resolve_site
-from thermodrive.cost import DEFAULT_FACTORY_HEAT_PIPE_UNIT_COST, InstallType
+try:
+    from thermodrive.cost import DEFAULT_VENDOR_REFERENCE_PIPE_COST, InstallType
+except ImportError:  # Backward compatibility for older checked-out cost.py files.
+    from thermodrive.cost import InstallType
+    try:
+        from thermodrive.cost import DEFAULT_FACTORY_HEAT_PIPE_UNIT_COST as DEFAULT_VENDOR_REFERENCE_PIPE_COST
+    except ImportError:
+        DEFAULT_VENDOR_REFERENCE_PIPE_COST = 100.0
 from thermodrive.metrics import risk_label
 from thermodrive.optimizer import Goal, OptimizationResult, optimize_design
 from thermodrive.physics import PAVEMENT_LIBRARY, SimulationConfig, run_thermal_simulation
@@ -225,7 +232,7 @@ with st.sidebar:
         "Vendor benchmark cost ($/reference pipe)",
         min_value=20.0,
         max_value=1000.0,
-        value=float(DEFAULT_FACTORY_HEAT_PIPE_UNIT_COST),
+        value=float(DEFAULT_VENDOR_REFERENCE_PIPE_COST),
         step=5.0,
         help="Vendor benchmark for a reference factory-manufactured sealed thermosyphon. The app adjusts the actual pipe unit cost for diameter, depth, package complexity, and quantity, while keeping it close to this benchmark.",
     )

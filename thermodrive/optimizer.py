@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from .climate import Site
-from .cost import DEFAULT_FACTORY_HEAT_PIPE_UNIT_COST, CostEstimate, InstallType, estimate_project_cost
+from .cost import DEFAULT_VENDOR_REFERENCE_PIPE_COST, CostEstimate, InstallType, estimate_project_cost
 from .metrics import PerformanceMetrics, compare_metrics, compute_metrics
 from .physics import SimulationConfig, SimulationResult, run_thermal_simulation
 from .soil import SoilProfile
@@ -153,7 +153,7 @@ def _candidate_table(
     target_reduction_pct: float,
     max_depth_m: float,
     fluid: str,
-    factory_heat_pipe_unit_cost: float = DEFAULT_FACTORY_HEAT_PIPE_UNIT_COST,
+    factory_heat_pipe_unit_cost: float = DEFAULT_VENDOR_REFERENCE_PIPE_COST,
 ) -> pd.DataFrame:
     rows: list[dict[str, float | int | str]] = []
     aggressive = target_reduction_pct >= 50 or goal == "Reduce freeze risk"
@@ -221,7 +221,7 @@ def optimize_design(
     fluid: str,
     baseline_result: SimulationResult | None = None,
     full_verify_count: int = 8,
-    factory_heat_pipe_unit_cost: float = DEFAULT_FACTORY_HEAT_PIPE_UNIT_COST,
+    factory_heat_pipe_unit_cost: float = DEFAULT_VENDOR_REFERENCE_PIPE_COST,
 ) -> OptimizationResult:
     baseline = baseline_result or run_thermal_simulation(weather, site, soil, config, thermosyphon=None)
     baseline_metrics = compute_metrics(baseline)
